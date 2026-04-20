@@ -1,0 +1,44 @@
+{
+  "name": "adls-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "electron": "electron .",
+    "build:exe": "next build && xcopy /E /I .next\\static .next\\standalone\\.next\\static /Y && xcopy /E /I public .next\\standalone\\public /Y && electron-builder"
+  },
+  "build": {
+    "appId": "com.adls.explorer",
+    "productName": "ADLS Explorer",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "package.json",
+      ".next/standalone/**/*",
+      "public/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  },
+  "dependencies": {
+    "@azure/storage-file-datalake": "^12.29.0",
+    "lucide-react": "^1.8.0",
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4"
+  }
+}
