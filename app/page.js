@@ -7,7 +7,7 @@ import {
   BookmarkPlus, Bookmark, ChevronDown, X, Check,
   Eye, Table2, Database, Play, ChevronLeft, ChevronRight as ChevronRightIcon, AlertCircle
 } from "lucide-react";
-import alasql from "alasql";
+import { executeSQL } from "../lib/sqlEngine";
 
 const PROFILES_KEY = "adls_explorer_profiles";
 
@@ -276,14 +276,13 @@ export default function Home() {
     setQueryError(null);
     setQueryResult(null);
     try {
-      // Register data as alasql table
-      alasql.tables["data"] = { data: previewData.rows };
-      const result = alasql(sqlQuery);
+      const result = executeSQL(sqlQuery, previewData.rows);
       setQueryResult(result);
     } catch (err) {
       setQueryError(err.message);
     }
   };
+
 
   const closePreview = () => {
     setPreviewFile(null);
@@ -456,6 +455,7 @@ export default function Home() {
   // ── Explorer screen ───────────────────────────────────────────────────────
 
   return (
+    <>
     <div className="min-h-screen bg-slate-950 text-slate-200 p-6 font-sans">
       <div className="max-w-6xl mx-auto h-full flex flex-col">
         <header className="flex items-center justify-between mb-8 pb-6 border-b border-slate-800/60">
@@ -880,6 +880,6 @@ export default function Home() {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

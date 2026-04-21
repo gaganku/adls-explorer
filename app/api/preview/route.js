@@ -86,42 +86,41 @@ export async function POST(request) {
       rows = result.data;
       columns = result.meta.fields || [];
     } else if (ext === "parquet") {
-      // hyparquet needs an AsyncBuffer interface
-      const arrayBuffer = buffer.buffer.slice(
-        buffer.byteOffset,
-        buffer.byteOffset + buffer.byteLength
+      // Convert Node.js Buffer to a pure ArrayBuffer.
+      // We slice it to ensure we only get the relevant portion and a fresh ArrayBuffer instance,
+      // which avoids 'expected ArrayBuffer' errors in strict hyparquet versions.
+      const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+
+      // Get column names from metadata
+      const metadata = await parquetMetadata(arrayBuffer);
+      const schemaLeaves = metadata.schema.filter(
+        (s) => s.num_children === undefined || s.num_children === 0
       );
+      columns = schemaLeaves.map((s) => s.name).filter(Boolean);
 
-      const asyncBuf = {
-        byteLength: arrayBuffer.byteLength,
-        slice: (start, end) => Promise.resolve(arrayBuffer.slice(start, end)),
-      };
-
-      const metadata = await parquetMetadata(asyncBuf);
-
+      // hyparquet onChunk delivers ONE COLUMN at a time across row ranges
+      const columnArrays = {};
       await parquetRead({
-        file: asyncBuf,
-        onChunk: (chunk) => {
-          chunk.rows.forEach((row) => {
-            const obj = {};
-            chunk.columnName.forEach((col, i) => {
-              obj[col] = row[i];
-            });
-            rows.push(obj);
-          });
+        file: arrayBuffer,
+        onChunk: ({ columnName, columnData }) => {
+          if (!columnName) return;
+          if (!columnArrays[columnName]) columnArrays[columnName] = [];
+          for (const val of columnData) columnArrays[columnName].push(val);
         },
       });
 
-      // Derive columns from metadata schema
-      columns = metadata.schema
-        .filter((s) => s.name && s.type !== undefined)
-        .map((s) => s.name);
+      // Fallback: derive columns from what was actually read
+      if (columns.length === 0) columns = Object.keys(columnArrays);
 
-      // Fallback: derive columns from first row
-      if (columns.length === 0 && rows.length > 0) {
-        columns = Object.keys(rows[0]);
+      // Transpose column arrays → row objects
+      const rowCount = Math.max(0, ...Object.values(columnArrays).map((a) => a.length));
+      for (let i = 0; i < rowCount; i++) {
+        const row = {};
+        for (const col of columns) row[col] = columnArrays[col]?.[i] ?? null;
+        rows.push(row);
       }
     }
+
 
     const schema = buildSchema(rows, columns);
 
