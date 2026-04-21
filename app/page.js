@@ -238,6 +238,18 @@ export default function Home() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return "-";
+    const date = new Date(dateStr);
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
   // ── Preview handlers ───────────────────────────────────────────────────────
 
   const handlePreview = async (filePath, basename) => {
@@ -553,63 +565,81 @@ export default function Home() {
                 <p>This folder is empty.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {items.map((item) => (
-                  <div
-                    key={item.name}
-                    className="group relative flex items-center p-3.5 bg-slate-900/20 rounded-2xl hover:bg-slate-800 border border-slate-800/40 hover:border-slate-700/60 transition-all cursor-pointer shadow-sm hover:shadow-md"
-                    onClick={() => item.isDirectory ? handleNavigate(item.basename) : null}
-                  >
-                    <div className="flex-shrink-0 mr-4">
-                      {item.isDirectory ? (
-                        <div className="p-2.5 bg-amber-500/10 rounded-xl group-hover:bg-amber-500/20 transition-colors">
-                          <Folder className="w-6 h-6 text-amber-500" />
-                        </div>
-                      ) : (
-                        <div className="p-2.5 bg-blue-500/10 rounded-xl group-hover:bg-blue-500/20 transition-colors">
-                          <File className="w-6 h-6 text-blue-400" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-grow min-w-0 pr-16">
-                      <h3 className="text-sm font-semibold text-slate-200 truncate group-hover:text-white transition-colors" title={item.basename}>
-                        {item.basename}
-                      </h3>
-                      {!item.isDirectory && (
-                        <p className="text-xs text-slate-500 mt-1 font-medium">{formatSize(item.contentLength)}</p>
-                      )}
-                    </div>
+              <div className="flex flex-col">
+                {/* List Header */}
+                <div className="flex items-center px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-800/40 mb-2">
+                  <div className="w-10"></div>
+                  <div className="flex-grow min-w-0 px-4">Name</div>
+                  <div className="w-24 px-4 text-right hidden sm:block">Size</div>
+                  <div className="w-48 px-4 text-right hidden md:block">Modified</div>
+                  <div className="w-24"></div>
+                </div>
 
-                    {/* Action icons */}
-                    <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 absolute right-3 transition-opacity">
-                      {!item.isDirectory && ["csv","parquet"].includes(item.basename.split(".").pop().toLowerCase()) && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handlePreview(item.name, item.basename); }}
-                          className="p-1.5 text-slate-400 hover:text-white hover:bg-violet-500 rounded-lg transition-colors"
-                          title="Preview data"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                      )}
-                      {!item.isDirectory && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleDownload(item.name, item.basename); }}
-                          className="p-1.5 text-slate-400 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
-                          title="Download"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDelete(item.name, item.isDirectory); }}
-                        className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                <div className="space-y-1">
+                  {items.map((item) => (
+                    <div
+                      key={item.name}
+                      className="group flex items-center p-2 bg-slate-900/20 rounded-xl hover:bg-slate-800/60 border border-slate-800/40 hover:border-slate-700/60 transition-all cursor-pointer"
+                      onClick={() => item.isDirectory ? handleNavigate(item.basename) : null}
+                    >
+                      <div className="flex-shrink-0 w-10 flex justify-center">
+                        {item.isDirectory ? (
+                          <Folder className="w-5 h-5 text-amber-500/80" />
+                        ) : (
+                          <File className="w-5 h-5 text-blue-400/80" />
+                        )}
+                      </div>
+                      
+                      <div className="flex-grow min-w-0 px-4">
+                        <h3 className="text-sm font-medium text-slate-200 truncate group-hover:text-white transition-colors" title={item.basename}>
+                          {item.basename}
+                        </h3>
+                      </div>
+
+                      <div className="w-24 px-4 text-right hidden sm:block">
+                        <p className="text-xs text-slate-500 font-medium">
+                          {item.isDirectory ? "-" : formatSize(item.contentLength)}
+                        </p>
+                      </div>
+
+                      <div className="w-48 px-4 text-right hidden md:block">
+                        <p className="text-xs text-slate-500 whitespace-nowrap">
+                          {formatDate(item.lastModified)}
+                        </p>
+                      </div>
+
+                      <div className="w-24 flex items-center justify-end gap-0.5 px-2">
+                        <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!item.isDirectory && ["csv","parquet"].includes(item.basename.split(".").pop().toLowerCase()) && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handlePreview(item.name, item.basename); }}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-violet-500/20 rounded-lg transition-colors"
+                              title="Preview data"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          )}
+                          {!item.isDirectory && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleDownload(item.name, item.basename); }}
+                              className="p-1.5 text-slate-400 hover:text-white hover:bg-blue-500/20 rounded-lg transition-colors"
+                              title="Download"
+                            >
+                              <Download className="w-4 h-4" />
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDelete(item.name, item.isDirectory); }}
+                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
           </div>
