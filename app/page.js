@@ -57,6 +57,10 @@ export default function Home() {
   const [queryError, setQueryError] = useState(null);
   const PREVIEW_PAGE_SIZE = 100;
 
+  // Selection state
+  const [selectedPaths, setSelectedPaths] = useState(new Set());
+  const [isBulkDownloading, setIsBulkDownloading] = useState(false);
+
 
   // Load profiles from localStorage on mount
   useEffect(() => {
@@ -120,6 +124,7 @@ export default function Home() {
       setItems(data.items || []);
       setCurrentPath(prefix);
       setIsConnected(true);
+      setSelectedPaths(new Set()); // Reset selection on navigate
     } catch (err) {
       setError(err.message);
     } finally {
@@ -248,6 +253,68 @@ export default function Home() {
       hour: '2-digit',
       minute: '2-digit'
     });
+  };
+
+  // ── Selection handlers ───────────────────────────────────────────────────
+
+  const toggleSelect = (path, e) => {
+    if (e) e.stopPropagation();
+    const newSelected = new Set(selectedPaths);
+    if (newSelected.has(path)) {
+      newSelected.delete(path);
+    } else {
+      newSelected.add(path);
+    }
+    setSelectedPaths(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedPaths.size === items.length) {
+      setSelectedPaths(new Set());
+    } else {
+      setSelectedPaths(new Set(items.map(item => item.name)));
+    }
+  };
+
+  const handleBulkDownload = async () => {
+    if (selectedPaths.size === 0) return;
+    setIsBulkDownloading(true);
+    const pathsToDownload = items.filter(item => selectedPaths.has(item.name) && !item.isDirectory);
+    
+    for (const item of pathsToDownload) {
+      await handleDownload(item.name, item.basename);
+      // Small delay between downloads to prevent browser blocking
+      await new Promise(r => setTimeout(r, 300));
+    }
+    setIsBulkDownloading(false);
+    setSelectedPaths(new Set());
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedPaths.size === 0) return;
+    if (!confirm(`Are you sure you want to delete ${selectedPaths.size} items?`)) return;
+    
+    setIsLoading(true);
+    try {
+      for (const path of selectedPaths) {
+        const item = items.find(i => i.name === path);
+        const res = await fetch("/api/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...config, path, isDirectory: item?.isDirectory }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          console.error(`Failed to delete ${path}:`, data.error);
+        }
+      }
+      fetchItems(currentPath);
+    } catch (err) {
+      alert("Error during bulk delete: " + err.message);
+    } finally {
+      setIsLoading(false);
+      setSelectedPaths(new Set());
+    }
   };
 
   // ── Preview handlers ───────────────────────────────────────────────────────
@@ -568,21 +635,76 @@ export default function Home() {
               <div className="flex flex-col">
                 {/* List Header */}
                 <div className="flex items-center px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider border-b border-slate-800/40 mb-2">
-                  <div className="w-10"></div>
+                  <div className="w-10 flex justify-center">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500/20 transition-all cursor-pointer"
+                      checked={items.length > 0 && selectedPaths.size === items.length}
+                      onChange={toggleSelectAll}
+                    />
+                  </div>
                   <div className="flex-grow min-w-0 px-4">Name</div>
                   <div className="w-24 px-4 text-right hidden sm:block">Size</div>
                   <div className="w-48 px-4 text-right hidden md:block">Modified</div>
                   <div className="w-24"></div>
                 </div>
 
+                {/* Bulk Actions Bar */}
+                {selectedPaths.size > 0 && (
+                  <div className="mx-4 mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-2xl flex items-center justify-between animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-blue-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                        {selectedPaths.size}
+                      </div>
+                      <span className="text-sm font-medium text-blue-400">Items selected</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleBulkDownload}
+                        disabled={isBulkDownloading}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-lg shadow-blue-500/20 disabled:opacity-50"
+                      >
+                        {isBulkDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                        Download All
+                      </button>
+                      <button
+                        onClick={handleBulkDelete}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Delete
+                      </button>
+                      <button
+                        onClick={() => setSelectedPaths(new Set())}
+                        className="p-1.5 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1">
                   {items.map((item) => (
                     <div
                       key={item.name}
-                      className="group flex items-center p-2 bg-slate-900/20 rounded-xl hover:bg-slate-800/60 border border-slate-800/40 hover:border-slate-700/60 transition-all cursor-pointer"
-                      onClick={() => item.isDirectory ? handleNavigate(item.basename) : null}
+                      className={`group flex items-center p-2 rounded-xl border transition-all cursor-pointer ${
+                        selectedPaths.has(item.name)
+                          ? "bg-blue-500/10 border-blue-500/40"
+                          : "bg-slate-900/20 border-slate-800/40 hover:bg-slate-800/60 hover:border-slate-700/60"
+                      }`}
+                      onClick={() => item.isDirectory ? handleNavigate(item.basename) : toggleSelect(item.name)}
                     >
                       <div className="flex-shrink-0 w-10 flex justify-center">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-500 focus:ring-blue-500/20 transition-all cursor-pointer"
+                          checked={selectedPaths.has(item.name)}
+                          onChange={(e) => toggleSelect(item.name, e)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                      <div className="flex-shrink-0 w-10 flex justify-center ml-2">
                         {item.isDirectory ? (
                           <Folder className="w-5 h-5 text-amber-500/80" />
                         ) : (
