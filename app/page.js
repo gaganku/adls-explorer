@@ -1,7 +1,25 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { Folder, File, Download, ChevronRight, HardDrive, LogOut, ArrowLeft, Trash2, FolderPlus, UploadCloud, Loader2 } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import {
+  Folder, File, Download, ChevronRight, HardDrive, LogOut,
+  ArrowLeft, Trash2, FolderPlus, UploadCloud, Loader2,
+  BookmarkPlus, Bookmark, ChevronDown, X, Check
+} from "lucide-react";
+
+const PROFILES_KEY = "adls_explorer_profiles";
+
+function loadProfiles() {
+  try {
+    return JSON.parse(localStorage.getItem(PROFILES_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function saveProfiles(profiles) {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+}
 
 export default function Home() {
   const [config, setConfig] = useState({
@@ -15,8 +33,63 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState(null);
-  
+
+  // Profile state
+  const [profiles, setProfiles] = useState({});
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [savedFeedback, setSavedFeedback] = useState(false);
+  const dropdownRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Load profiles from localStorage on mount
+  useEffect(() => {
+    setProfiles(loadProfiles());
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowProfileDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const handleSaveProfile = () => {
+    if (!profileName.trim()) return;
+    const updated = {
+      ...profiles,
+      [profileName.trim()]: { ...config },
+    };
+    saveProfiles(updated);
+    setProfiles(updated);
+    setProfileName("");
+    setShowSaveDialog(false);
+    setSavedFeedback(true);
+    setTimeout(() => setSavedFeedback(false), 2000);
+  };
+
+  const handleLoadProfile = (name) => {
+    setConfig({ ...profiles[name] });
+    setShowProfileDropdown(false);
+    setError(null);
+  };
+
+  const handleDeleteProfile = (name, e) => {
+    e.stopPropagation();
+    const updated = { ...profiles };
+    delete updated[name];
+    saveProfiles(updated);
+    setProfiles(updated);
+  };
+
+  const profileCount = Object.keys(profiles).length;
+
+  // ── Core ADLS actions ─────────────────────────────────────────────────────
 
   const fetchItems = async (prefix = "") => {
     setIsLoading(true);
@@ -53,8 +126,7 @@ export default function Home() {
     if (!currentPath) return;
     const parts = currentPath.split("/");
     parts.pop();
-    const newPath = parts.join("/");
-    fetchItems(newPath);
+    fetchItems(parts.join("/"));
   };
 
   const handleDownload = async (filePath, basename) => {
@@ -68,7 +140,6 @@ export default function Home() {
         const data = await res.json();
         throw new Error(data.error || "Failed to download");
       }
-      
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -86,9 +157,7 @@ export default function Home() {
   const handleCreateFolder = async () => {
     const folderName = prompt("Enter new folder name:");
     if (!folderName) return;
-
     const folderPath = currentPath ? `${currentPath}/${folderName}` : folderName;
-
     try {
       const res = await fetch("/api/create-folder", {
         method: "POST",
@@ -97,8 +166,6 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to create folder");
-      
-      // Refresh current directory
       fetchItems(currentPath);
     } catch (err) {
       alert("Failed to create folder: " + err.message);
@@ -106,10 +173,7 @@ export default function Home() {
   };
 
   const handleDelete = async (path, isDirectory) => {
-    if (!confirm(`Are you sure you want to delete this ${isDirectory ? 'folder and all its contents' : 'file'}?\nThis action cannot be undone.`)) {
-      return;
-    }
-
+    if (!confirm(`Are you sure you want to delete this ${isDirectory ? "folder and all its contents" : "file"}?\nThis action cannot be undone.`)) return;
     try {
       const res = await fetch("/api/delete", {
         method: "POST",
@@ -118,25 +182,19 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to delete");
-      
-      // Refresh current directory
       fetchItems(currentPath);
     } catch (err) {
       alert("Failed to delete: " + err.message);
     }
   };
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleUploadClick = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     const filePath = currentPath ? `${currentPath}/${file.name}` : file.name;
     setIsUploading(true);
-
     try {
       const formData = new FormData();
       formData.append("storageAccount", config.storageAccount);
@@ -144,22 +202,14 @@ export default function Home() {
       formData.append("sasToken", config.sasToken);
       formData.append("filePath", filePath);
       formData.append("file", file);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      
+      const res = await fetch("/api/upload", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to upload file");
-      
-      // Refresh current directory
       fetchItems(currentPath);
     } catch (err) {
       alert("Upload failed: " + err.message);
     } finally {
       setIsUploading(false);
-      // Reset input so the same file can be uploaded again if needed
       e.target.value = "";
     }
   };
@@ -173,19 +223,76 @@ export default function Home() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   };
 
+  // ── Login screen ──────────────────────────────────────────────────────────
+
   if (!isConnected) {
     return (
-      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 flex items-center justify-center p-6 text-slate-100 font-sans">
-        <div className="w-full max-w-md bg-slate-900/40 backdrop-blur-2xl rounded-3xl border border-slate-800/80 p-8 shadow-2xl ring-1 ring-white/5 relative overflow-hidden">
+      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 flex items-center justify-center p-4 text-slate-100 font-sans">
+        <div className="w-full max-w-4xl flex gap-5 items-start">
+
+          {/* ── LEFT: Saved Profiles Panel (always visible) ── */}
+          <div className="w-72 flex-shrink-0 bg-slate-900/50 backdrop-blur-2xl rounded-3xl border border-slate-800/80 shadow-2xl ring-1 ring-white/5 overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-slate-800/60 flex items-center gap-2">
+              <Bookmark className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-semibold text-slate-300">Saved Profiles</span>
+              {profileCount > 0 && (
+                <span className="ml-auto text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full px-2 py-0.5 font-medium">
+                  {profileCount}
+                </span>
+              )}
+            </div>
+
+            <div className="flex-grow overflow-y-auto p-3 space-y-2 max-h-[420px]">
+              {profileCount === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-800/60 flex items-center justify-center border border-slate-700/50">
+                    <BookmarkPlus className="w-6 h-6 text-slate-600" />
+                  </div>
+                  <p className="text-sm text-slate-500 leading-relaxed">No profiles saved yet. Fill in your credentials and click <span className="text-blue-400 font-medium">Save as profile</span>.</p>
+                </div>
+              ) : (
+                Object.keys(profiles).map((name) => (
+                  <div
+                    key={name}
+                    onClick={() => handleLoadProfile(name)}
+                    className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
+                      config.storageAccount === profiles[name].storageAccount && config.containerName === profiles[name].containerName
+                        ? "bg-blue-500/10 border-blue-500/40 shadow-inner"
+                        : "bg-slate-800/30 border-slate-700/40 hover:bg-slate-800/70 hover:border-slate-600/60"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-200 group-hover:text-white truncate">{name}</p>
+                      <p className="text-xs text-slate-500 truncate mt-0.5">{profiles[name].storageAccount}</p>
+                      <p className="text-xs text-slate-600 truncate">{profiles[name].containerName}</p>
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteProfile(name, e)}
+                      className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 ml-2"
+                      title="Delete profile"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* ── RIGHT: Connection Form ── */}
+          <div className="flex-grow bg-slate-900/40 backdrop-blur-2xl rounded-3xl border border-slate-800/80 p-8 shadow-2xl ring-1 ring-white/5 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-cyan-400"></div>
-          <div className="flex flex-col items-center gap-3 mb-10 text-center">
+
+          <div className="flex flex-col items-center gap-3 mb-8 text-center">
             <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center border border-blue-500/20 shadow-inner mb-2">
               <HardDrive className="w-8 h-8 text-blue-400" />
             </div>
             <h1 className="text-3xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-white to-slate-400">ADLS Explorer</h1>
             <p className="text-sm text-slate-400">Connect to your Azure Data Lake Storage</p>
           </div>
-          
+
+
+          {/* ── Connection Form ── */}
           <form onSubmit={handleConnect} className="space-y-5">
             <div className="space-y-1.5">
               <label className="block text-sm font-medium text-slate-300">Storage Account Name</label>
@@ -228,20 +335,56 @@ export default function Home() {
               </div>
             )}
 
+            {/* ── Save Profile inline dialog ── */}
+            {showSaveDialog ? (
+              <div className="flex items-center gap-2 p-3 bg-slate-800/60 border border-slate-700/60 rounded-xl">
+                <BookmarkPlus className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                <input
+                  autoFocus
+                  type="text"
+                  className="flex-grow bg-transparent text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none"
+                  placeholder="Profile name (e.g. Production)"
+                  value={profileName}
+                  onChange={(e) => setProfileName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleSaveProfile(); } if (e.key === "Escape") setShowSaveDialog(false); }}
+                />
+                <button type="button" onClick={handleSaveProfile} disabled={!profileName.trim()} className="p-1.5 text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-colors disabled:opacity-40">
+                  <Check className="w-4 h-4" />
+                </button>
+                <button type="button" onClick={() => setShowSaveDialog(false)} className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-slate-700 rounded-lg transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowSaveDialog(true)}
+                disabled={!config.storageAccount || !config.containerName || !config.sasToken}
+                className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium text-slate-400 hover:text-blue-400 border border-slate-700/60 hover:border-blue-500/40 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                {savedFeedback ? (
+                  <><Check className="w-4 h-4 text-emerald-400" /><span className="text-emerald-400">Profile saved!</span></>
+                ) : (
+                  <><BookmarkPlus className="w-4 h-4" />Save as profile</>
+                )}
+              </button>
+            )}
+
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-medium rounded-xl px-4 py-3 mt-4 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
+              className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-medium rounded-xl px-4 py-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20"
             >
-              {isLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : "Connect & Explore"}
+              {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Connect & Explore"}
             </button>
           </form>
+          </div>
         </div>
       </div>
     );
   }
+
+  // ── Explorer screen ───────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 p-6 font-sans">
@@ -269,7 +412,7 @@ export default function Home() {
         </header>
 
         <div className="bg-slate-900/40 rounded-3xl border border-slate-800/60 shadow-2xl overflow-hidden backdrop-blur-xl flex-grow flex flex-col ring-1 ring-white/5 relative">
-          
+
           {/* Upload Progress Overlay */}
           {isUploading && (
             <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm z-50 flex flex-col items-center justify-center text-white">
@@ -308,29 +451,24 @@ export default function Home() {
                 })}
               </div>
             </div>
-            
+
             {/* Action Buttons */}
             <div className="flex items-center gap-2 flex-shrink-0">
-              <button 
+              <button
                 onClick={handleCreateFolder}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors border border-slate-700/50"
               >
                 <FolderPlus className="w-4 h-4" />
                 <span className="hidden sm:inline">New Folder</span>
               </button>
-              <button 
+              <button
                 onClick={handleUploadClick}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors shadow-lg shadow-blue-500/20"
               >
                 <UploadCloud className="w-4 h-4" />
                 <span className="hidden sm:inline">Upload File</span>
               </button>
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
-              />
+              <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
             </div>
           </div>
 
@@ -369,20 +507,15 @@ export default function Home() {
                         {item.basename}
                       </h3>
                       {!item.isDirectory && (
-                        <p className="text-xs text-slate-500 mt-1 font-medium">
-                          {formatSize(item.contentLength)}
-                        </p>
+                        <p className="text-xs text-slate-500 mt-1 font-medium">{formatSize(item.contentLength)}</p>
                       )}
                     </div>
-                    
+
                     {/* Action icons */}
                     <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 absolute right-3 transition-opacity">
                       {!item.isDirectory && (
                         <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownload(item.name, item.basename);
-                          }}
+                          onClick={(e) => { e.stopPropagation(); handleDownload(item.name, item.basename); }}
                           className="p-1.5 text-slate-400 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
                           title="Download"
                         >
@@ -390,10 +523,7 @@ export default function Home() {
                         </button>
                       )}
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(item.name, item.isDirectory);
-                        }}
+                        onClick={(e) => { e.stopPropagation(); handleDelete(item.name, item.isDirectory); }}
                         className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 rounded-lg transition-colors"
                         title="Delete"
                       >
